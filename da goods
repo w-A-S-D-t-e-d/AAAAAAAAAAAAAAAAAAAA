@@ -722,11 +722,26 @@
             }
           };
 
-          const downloadFrame = async (frameIndex) => {
+          const triggerFrameDownload = (frameData, frameIndex) => {
+            const link = document.createElement('a');
+            link.download = `${customFilename}-frame-${frameIndex + 1}.png`;
+            link.href = frameData;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+          };
+
+          const downloadFrame = async (frameIndex, forceAutoDownload = false) => {
             if (repixelateFrames[frameIndex]) {
               try {
                 const frameData = repixelateFrames[frameIndex].data || repixelateFrames[frameIndex];
-                
+
+                // For multi-download, avoid save picker (requires direct user activation each time)
+                if (forceAutoDownload) {
+                  triggerFrameDownload(frameData, frameIndex);
+                  return;
+                }
+
                 // Check if File System Access API is supported
                 if ('showSaveFilePicker' in window) {
                   const handle = await window.showSaveFilePicker({
@@ -736,7 +751,7 @@
                       accept: { 'image/png': ['.png'] }
                     }]
                   });
-                  
+
                   const writable = await handle.createWritable();
                   const response = await fetch(frameData);
                   const blob = await response.blob();
@@ -744,12 +759,7 @@
                   await writable.close();
                 } else {
                   // Fallback for browsers without File System Access API
-                  const link = document.createElement('a');
-                  link.download = `${customFilename}-frame-${frameIndex + 1}.png`;
-                  link.href = frameData;
-                  document.body.appendChild(link);
-                  link.click();
-                  document.body.removeChild(link);
+                  triggerFrameDownload(frameData, frameIndex);
                 }
               } catch (error) {
                 // User cancelled or error occurred
@@ -763,8 +773,8 @@
           const downloadAllFrames = () => {
             repixelateFrames.forEach((frame, i) => {
               setTimeout(() => {
-                downloadFrame(i);
-              }, i * 300);
+                downloadFrame(i, true);
+              }, i * 150);
             });
           };
 
@@ -935,37 +945,25 @@
               }
 
               // Render and download
-              gif.on('finished', async (blob) => {
+              gif.on('finished', (blob) => {
                 try {
-                  // Check if File System Access API is supported
-                  if ('showSaveFilePicker' in window) {
-                    const handle = await window.showSaveFilePicker({
-                      suggestedName: `${customFilename}.gif`,
-                      types: [{
-                        description: 'GIF Image',
-                        accept: { 'image/gif': ['.gif'] }
-                      }]
-                    });
-                    
-                    const writable = await handle.createWritable();
-                    await writable.write(blob);
-                    await writable.close();
-                  } else {
-                    // Fallback for browsers without File System Access API
-                    const url = URL.createObjectURL(blob);
-                    const link = document.createElement('a');
-                    link.download = `${customFilename}.gif`;
-                    link.href = url;
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                    URL.revokeObjectURL(url);
-                  }
+                  const url = URL.createObjectURL(blob);
+                  const link = document.createElement('a');
+                  link.download = `${customFilename}.gif`;
+                  link.href = url;
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                  URL.revokeObjectURL(url);
                 } catch (error) {
-                  if (error.name !== 'AbortError') {
-                    console.error('Download error:', error);
-                  }
+                  console.error('Download error:', error);
                 }
+                setIsGeneratingGif(false);
+              });
+
+              gif.on('error', (error) => {
+                console.error('GIF render error:', error);
+                alert('Error generating GIF. Please try again.');
                 setIsGeneratingGif(false);
               });
 
